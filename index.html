@@ -198,3 +198,215 @@
         .btn-delete:hover { background-color: var(--danger-hover); }
 
         .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-sub);
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+        }
+
+        /* ------------------------------------- */
+        /* 토스트 알림 (자동 사라짐) 전용 CSS */
+        /* ------------------------------------- */
+        .toast-container {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast {
+            background-color: #2d3748;
+            color: #ffffff;
+            padding: 14px 24px;
+            border-radius: 30px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fade-in-up 0.3s forwards, fade-out-down 0.3s 3.7s forwards;
+            text-align: center;
+        }
+
+        .toast.success { background-color: #38a169; }
+        .toast.error { background-color: #e53e3e; }
+
+        @keyframes fade-in-up {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-out-down {
+            to { opacity: 0; transform: translateY(20px); }
+        }
+
+        @media (max-width: 600px) {
+            .sig-item { flex-direction: column; align-items: flex-start; gap: 15px; }
+            .action-buttons { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+            .input-group { flex-direction: column; }
+            .login-bar { flex-direction: column; align-items: flex-start; }
+            .login-form { width: 100%; }
+            .login-form input { width: 100%; }
+            .toast-container { width: 90%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div class="container" id="mainContainer">
+        <h1>주하랑 시그 아카이브</h1>
+
+        <div class="login-bar">
+            <div class="login-status" id="loginStatus">일반 모드 (조회 및 복사만 가능)</div>
+            <div class="login-form" id="loginFormArea">
+                <input type="password" id="loginPwd" placeholder="매니저 비밀번호">
+                <button class="btn-login" onclick="checkLogin()">로그인</button>
+            </div>
+        </div>
+
+        <div class="form-section" id="adminForm">
+            <h2>새로운 시그 등록</h2>
+            <div class="input-group">
+                <input type="text" id="sigName" placeholder="시그 이름을 입력해주세요">
+            </div>
+            <div class="input-group">
+                <input type="text" id="imgUrl" placeholder="이미지 URL 입력">
+                <input type="text" id="audioUrl" placeholder="음원 URL 입력">
+            </div>
+            <button class="btn-save" onclick="addSig()">저장하기</button>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="저장된 시그 이름을 검색하세요..." onkeyup="filterSigs()">
+        </div>
+
+        <div id="sigList"></div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDBsueJKgrDL4FzXw6NtHNGTo82R7wdQ8M",
+            authDomain: "tm-sig-archive.firebaseapp.com",
+            databaseURL: "https://tm-sig-archive-default-rtdb.firebaseio.com",
+            projectId: "tm-sig-archive",
+            storageBucket: "tm-sig-archive.firebasestorage.app",
+            messagingSenderId: "1042712780703",
+            appId: "1:1042712780703:web:20b7f568610021a3d427aa"
+        };
+
+        const MASTER_PASSWORD = "132456"; 
+
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let sigData = [];
+        let isLoggedIn = false;
+
+        // 알림창 자동 사라짐 기능 (토스트 알림)
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerText = message;
+            
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 4100);
+        }
+
+        window.onload = function() {
+            const savedPwd = localStorage.getItem('manager_session');
+            if (savedPwd === MASTER_PASSWORD) {
+                setLoginState(true);
+            }
+        };
+
+        function checkLogin() {
+            const pwdInput = document.getElementById('loginPwd').value.trim();
+            if (pwdInput === MASTER_PASSWORD) {
+                localStorage.setItem('manager_session', pwdInput);
+                setLoginState(true);
+                document.getElementById('loginPwd').value = "";
+                showToast("매니저 인증에 성공했습니다!"); 
+            } else {
+                showToast("비밀번호가 올바르지 않습니다.", "error"); 
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('manager_session');
+            setLoginState(false);
+            showToast("로그아웃 되었습니다."); 
+        }
+
+        function setLoginState(isTrue) {
+            isLoggedIn = isTrue;
+            const container = document.getElementById('mainContainer');
+            const statusText = document.getElementById('loginStatus');
+            const formArea = document.getElementById('loginFormArea');
+            const adminForm = document.getElementById('adminForm');
+
+            if (isTrue) {
+                container.classList.add('admin-mode');
+                adminForm.classList.add('active');
+                statusText.innerText = "🔒 매니저 모드 활성화 중";
+                formArea.innerHTML = `<button class="btn-logout" onclick="handleLogout()">로그아웃</button>`;
+            } else {
+                container.classList.remove('admin-mode');
+                adminForm.classList.remove('active');
+                statusText.innerText = "일반 모드 (조회 및 복사만 가능)";
+                formArea.innerHTML = `
+                    <input type="password" id="loginPwd" placeholder="매니저 비밀번호">
+                    <button class="btn-login" onclick="checkLogin()">로그인</button>
+                `;
+            }
+        }
+
+        database.ref('rang_sigs').on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                sigData = Object.values(data);
+            } else {
+                sigData = [{ 
+                    id: 1, 
+                    name: "주하랑 아카이브 첫 샘플 (원하시는 시그를 추가해보세요!)", 
+                    imgUrl: "없음", 
+                    audioUrl: "없음" 
+                }];
+                database.ref('rang_sigs/' + sigData[0].id).set(sigData[0]);
+            }
+            filterSigs();
+        });
+
+        function renderSigs(filteredList) {
+            const listContainer = document.getElementById('sigList');
+            listContainer.innerHTML = "";
+
+            if (!filteredList || filteredList.length === 0) {
+                listContainer.innerHTML = `<div class="empty-state">검색된 시그가 없거나 아직 등록되지 않았습니다.</div>`;
+                return;
+            }
+
+            [...filteredList].reverse().forEach(sig => {
+                const item = document.createElement('div');
+                item.className = 'sig-item';
+                item.innerHTML = `
+                    <div class="sig-info">
+                        <h3>${sig.name}</h3>
+                        <p>IMG: ${sig.imgUrl || '없음'}</p>
+                        <p>MP3: ${sig.audioUrl || '없음'}</p>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn-copy-img" onclick="copyToClipboard('${sig.imgUrl}', '이미지')">이미지 URL</button>
+                        <button class="btn-copy-audio" onclick="copyToClipboard('${sig.audioUrl}', '음원')">음원 URL</button>
+                        <button class="btn-edit admin-btn" onclick="updateSigName(${sig.id}, '${sig.name.replace(/'/g, "\\'")}')">수정</button>
+                        <button class="btn-delete admin-
