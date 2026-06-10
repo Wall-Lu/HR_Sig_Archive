@@ -188,6 +188,7 @@
         .btn-copy-audio { background-color: #48bb78; color: white; }
         .btn-copy-audio:hover { background-color: #38a169; }
 
+        /* 관리자 전용 버튼은 기본적으로 숨김 처리 */
         .admin-btn { display: none; }
         .admin-mode .admin-btn { display: inline-block; }
 
@@ -206,43 +207,33 @@
             border: 1px dashed var(--border);
         }
 
-        /* ------------------------------------- */
-        /* 토스트 알림 (자동 사라짐) 전용 CSS */
-        /* ------------------------------------- */
-        .toast-container {
+        /* -------------------------------------
+           토스트 알림(4초 뒤 사라지는 메시지) CSS 
+           ------------------------------------- */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: var(--text-main);
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
             position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
             z-index: 9999;
-            pointer-events: none;
-        }
-
-        .toast {
-            background-color: #2d3748;
-            color: #ffffff;
-            padding: 14px 24px;
-            border-radius: 30px;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%); /* 정확히 가운데 정렬 */
             font-size: 0.95rem;
-            font-weight: 600;
+            font-weight: 500;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             opacity: 0;
-            transform: translateY(20px);
-            animation: fade-in-up 0.3s forwards, fade-out-down 0.3s 3.7s forwards;
-            text-align: center;
+            transition: opacity 0.3s ease, bottom 0.3s ease;
         }
 
-        .toast.success { background-color: #38a169; }
-        .toast.error { background-color: #e53e3e; }
-
-        @keyframes fade-in-up {
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fade-out-down {
-            to { opacity: 0; transform: translateY(20px); }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px; /* 나타날 때 위로 살짝 올라오는 효과 */
         }
 
         @media (max-width: 600px) {
@@ -252,13 +243,11 @@
             .login-bar { flex-direction: column; align-items: flex-start; }
             .login-form { width: 100%; }
             .login-form input { width: 100%; }
-            .toast-container { width: 90%; }
+            #toast { width: 90%; min-width: auto; } /* 모바일에서 토스트 너비 조정 */
         }
     </style>
 </head>
 <body>
-
-    <div id="toastContainer" class="toast-container"></div>
 
     <div class="container" id="mainContainer">
         <h1>주하랑 시그 아카이브</h1>
@@ -290,6 +279,8 @@
         <div id="sigList"></div>
     </div>
 
+    <div id="toast">알림 메시지</div>
+
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyDBsueJKgrDL4FzXw6NtHNGTo82R7wdQ8M",
@@ -308,21 +299,23 @@
 
         let sigData = [];
         let isLoggedIn = false;
+        let toastTimeout; // 토스트 타이머 제어용 변수
 
-        // 알림창 자동 사라짐 기능 (토스트 알림)
-        function showToast(message, type = 'success') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
+        // 토스트 알림 함수 (4초 뒤 자동 사라짐)
+        function showToast(message) {
+            const toast = document.getElementById("toast");
             toast.innerText = message;
+            toast.classList.add("show");
             
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.remove();
-            }, 4100);
+            // 기존 타이머가 있다면 초기화 (알림이 겹칠 때 대비)
+            clearTimeout(toastTimeout);
+            
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove("show");
+            }, 4000);
         }
 
+        // 페이지가 처음 켜졌을 때 자동 로그인 체크
         window.onload = function() {
             const savedPwd = localStorage.getItem('manager_session');
             if (savedPwd === MASTER_PASSWORD) {
@@ -330,24 +323,27 @@
             }
         };
 
+        // 로그인 검증 함수
         function checkLogin() {
             const pwdInput = document.getElementById('loginPwd').value.trim();
             if (pwdInput === MASTER_PASSWORD) {
                 localStorage.setItem('manager_session', pwdInput);
                 setLoginState(true);
                 document.getElementById('loginPwd').value = "";
-                showToast("매니저 인증에 성공했습니다!"); 
+                showToast("매니저 인증에 성공했습니다!");
             } else {
-                showToast("비밀번호가 올바르지 않습니다.", "error"); 
+                showToast("비밀번호가 올바르지 않습니다.");
             }
         }
 
+        // 로그아웃 처리 함수
         function handleLogout() {
             localStorage.removeItem('manager_session');
             setLoginState(false);
-            showToast("로그아웃 되었습니다."); 
+            showToast("로그아웃 되었습니다.");
         }
 
+        // 로그인 여부에 따른 화면 UI 제어 변경
         function setLoginState(isTrue) {
             isLoggedIn = isTrue;
             const container = document.getElementById('mainContainer');
@@ -371,6 +367,7 @@
             }
         }
 
+        // 데이터베이스 실시간 연동 (주하랑 전용 경로: rang_sigs)
         database.ref('rang_sigs').on('value', (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -387,6 +384,7 @@
             filterSigs();
         });
 
+        // 리스트 출력
         function renderSigs(filteredList) {
             const listContainer = document.getElementById('sigList');
             listContainer.innerHTML = "";
@@ -409,4 +407,103 @@
                         <button class="btn-copy-img" onclick="copyToClipboard('${sig.imgUrl}', '이미지')">이미지 URL</button>
                         <button class="btn-copy-audio" onclick="copyToClipboard('${sig.audioUrl}', '음원')">음원 URL</button>
                         <button class="btn-edit admin-btn" onclick="updateSigName(${sig.id}, '${sig.name.replace(/'/g, "\\'")}')">수정</button>
-                        <button class="btn-delete admin-
+                        <button class="btn-delete admin-btn" onclick="deleteSig(${sig.id})">삭제</button>
+                    </div>
+                `;
+                listContainer.appendChild(item);
+            });
+        }
+
+        // 새로운 시그 추가
+        function addSig() {
+            if (!isLoggedIn) {
+                showToast("매니저 로그인이 필요합니다.");
+                return;
+            }
+
+            const nameInput = document.getElementById('sigName').value.trim();
+            const imgInput = document.getElementById('imgUrl').value.trim();
+            const audioInput = document.getElementById('audioUrl').value.trim();
+
+            if (!nameInput) {
+                showToast("시그 이름을 입력해주세요!");
+                return;
+            }
+
+            const newSig = {
+                id: Date.now(),
+                name: nameInput,
+                imgUrl: imgInput,
+                audioUrl: audioInput
+            };
+
+            database.ref('rang_sigs/' + newSig.id).set(newSig).then(() => {
+                document.getElementById('sigName').value = "";
+                document.getElementById('imgUrl').value = "";
+                document.getElementById('audioUrl').value = "";
+                document.getElementById('searchInput').value = "";
+                showToast("새로운 시그가 공유 저장되었습니다!");
+            }).catch(err => {
+                showToast("저장 실패: " + err.message);
+            });
+        }
+
+        // 이름 수정
+        function updateSigName(id, currentName) {
+            if (!isLoggedIn) {
+                showToast("권한이 없습니다. 상단에서 로그인해 주세요.");
+                return;
+            }
+
+            const newName = prompt("변경할 새로운 시그 이름을 입력해주세요:", currentName);
+            if (newName === null) return;
+            
+            const trimmedName = newName.trim();
+            if (!trimmedName) {
+                showToast("시그 이름은 공백으로 설정할 수 없습니다.");
+                return;
+            }
+
+            database.ref('rang_sigs/' + id).update({ name: trimmedName }).then(() => {
+                showToast("시그 이름이 성공적으로 수정되었습니다.");
+            }).catch(err => {
+                showToast("수정 실패: " + err.message);
+            });
+        }
+
+        // 시그 삭제
+        function deleteSig(id) {
+            if (!isLoggedIn) {
+                showToast("권한이 없습니다. 상단에서 로그인해 주세요.");
+                return;
+            }
+
+            if (confirm("정말 이 시그를 삭제하시겠습니까?")) {
+                database.ref('rang_sigs/' + id).remove().then(() => {
+                    showToast("삭제되었습니다.");
+                });
+            }
+        }
+
+        function copyToClipboard(text, type) {
+            if (!text || text === 'undefined' || text === '없음') {
+                showToast(`등록된 ${type} URL이 없습니다.`);
+                return;
+            }
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`${type} URL이 복사되었습니다!`);
+            }).catch(err => {
+                showToast("복사에 실패했습니다.");
+            });
+        }
+
+        function filterSigs() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = sigData.filter(sig => 
+                sig.name.toLowerCase().includes(query)
+            );
+            renderSigs(filtered);
+        }
+    </script>
+</body>
+</html>
